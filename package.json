@@ -1,0 +1,12 @@
+{
+  "name": "pogoda-app-multi",
+  "version": "1.0.0",
+  "description": "Zadanie dodatkowe - Multiarch",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
