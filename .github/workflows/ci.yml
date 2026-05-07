@@ -1,0 +1,82 @@
+name: CI/CD Pipeline Zadanie 2
+
+# Wyzwalacze: przy pushu na main oraz ręczne uruchomienie (workflow_dispatch)
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Wymagane do wysłania obrazu na ghcr.io
+
+    steps:
+      # 1. Pobranie kodu źródłowego
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Konfiguracja środowiska pod Multi-arch (ARM i AMD)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. Logowanie do DockerHub (Tylko dla Cache)
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 4. Logowanie do GitHub Container Registry (Dla docelowego obrazu)
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 5. Ekstrakcja metadanych do tagowania obrazu
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,priority=100,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # 6. Budowanie obrazu tylko dla runnera (aby móc go przeskanować)
+      - name: Build local image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: localbuild/testimage:latest
+
+      # 7. Test CVE za pomocą Trivy (Warunek z zadania)
+      # Jeśli znajdzie błędy CRITICAL lub HIGH, przerwie działanie i NIE wyśle obrazu
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'localbuild/testimage:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # 8. Budowanie Multi-arch i Push (Jeśli test CVE przeszedł pomyślnie)
+      - name: Build Multi-arch and push to GHCR with DockerHub Cache
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-to: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/pogoda-cache:max,mode=max
+          cache-from: type=registry,ref=${{ vars.DOCKERHUB_USERNAME }}/pogoda-cache:max
