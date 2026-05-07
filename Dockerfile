@@ -1,30 +1,33 @@
 # syntax=docker/dockerfile:1
 
-# ETAP 1: Budowanie
+# ETAP 1: Budowanie (Builder)
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --production
 COPY . .
 
-# ETAP 2: Obraz produkcyjny
+# ETAP 2: Obraz produkcyjny 
 FROM node:20-alpine
 
-# Zmienne środowiskowe
+# Zmienne środowiskowe 
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Metadane OCI
+# Kompletne Label'e w standardzie OCI 
 LABEL org.opencontainers.image.authors="Denys Khvyshchun" \
       org.opencontainers.image.title="Aplikacja Pogodowa - Lab8" \
-      org.opencontainers.image.version="1.0"
+      org.opencontainers.image.description="Aplikacja webowa wyświetlająca aktualną pogodę z wttr.in" \
+      org.opencontainers.image.version="1.0" \
+      org.opencontainers.image.vendor="Politechnika Lubelska"
 
 WORKDIR /app
 
-# Копіюємо все з першого етапу
-COPY --from=builder /app ./
+# Kopiowanie plików z etapu builder z przypisaniem uprawnień dla użytkownika 'node'
+COPY --chown=node:node --from=builder /app ./
+
+USER node
 
 EXPOSE 8080
 
-# Запуск
 CMD ["node", "server.js"]
